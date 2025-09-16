@@ -1,0 +1,4 @@
+langchain>=0.0.280
+sentence-transformers>=2.2.2
+faiss-cpu>=1.7.4
+openai>=0.27.0
