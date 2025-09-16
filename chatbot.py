@@ -43,7 +43,7 @@ def main():
 
 if __name__ == "__main__":
     # Asegúrate de exportar tu clave antes de ejecutar:
-    # export OPENAI_API_KEY="tu_api_key"
+    # export OPENAI_API_KEY="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"
     if not os.getenv("OPENAI_API_KEY"):
         print("❗️ Define la variable OPENAI_API_KEY antes de ejecutar.")
     else:
