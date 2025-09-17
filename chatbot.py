@@ -1,49 +1,67 @@
 #!/usr/bin/env python3
-# chatbot.py
+from dotenv import load_dotenv
+import os, re
+from openai.error                   import RateLimitError
+from langchain_community.embeddings import SentenceTransformerEmbeddings
+from langchain_community.vectorstores import FAISS
+from langchain_community.llms       import OpenAI
+from langchain.chains               import RetrievalQA
 
-from langchain.embeddings import SentenceTransformerEmbeddings
-from langchain.vectorstores import FAISS
-from langchain.llms import OpenAI
-from langchain.chains import RetrievalQA
-import os
+def respuesta_local(q, ventas):
+    q = q.lower()
+    if "menos ventas" in q:
+        p,v = min(ventas.items(), key=lambda x:x[1])
+        return f"El producto con menos ventas fue {p}, con {v} unidades vendidas."
+    if "más ventas" in q or "mayor venta" in q:
+        p,v = max(ventas.items(), key=lambda x:x[1])
+        return f"El producto con más ventas fue {p}, con {v} unidades vendidas."
+    return None
 
 def main():
-    # 1. Diccionario de ventas en memoria
-    ventas = {
-        "Zapatos": 120,
-        "Camisetas": 75,
-        "Pantalones": 50,
-        "Sombreros": 30
-    }
+    load_dotenv()
+    API_KEY = os.getenv("OPENAI_API_KEY")
+    if not API_KEY:
+        print("❗️ Define OPENAI_API_KEY en .env")
+        return
 
-    # 2. Transformar cada ítem en un documento de texto
-    docs = [f"Producto: {producto}, Ventas: {cantidad}" 
-            for producto, cantidad in ventas.items()]
+    ventas = {"Zapatos":120,"Camisetas":75,"Pantalones":50,"Sombreros":30}
+    docs   = [f"Producto: {p}, Ventas: {v}" for p,v in ventas.items()]
 
-    # 3. Generar embeddings y montar el índice FAISS
     embeddings = SentenceTransformerEmbeddings(model_name="all-MiniLM-L6-v2")
-    faiss_index = FAISS.from_texts(docs, embeddings)
+    index      = FAISS.from_texts(docs, embeddings)
 
-    # 4. Configurar el chain de QA
+    llm = OpenAI(
+        model_name="gpt-3.5-turbo",
+        temperature=0,
+        openai_api_key=API_KEY,
+        max_retries=0
+    )
     qa = RetrievalQA.from_chain_type(
-        llm=OpenAI(temperature=0),
+        llm=llm,
         chain_type="stuff",
-        retriever=faiss_index.as_retriever(search_kwargs={"k": 2})
+        retriever=index.as_retriever(search_kwargs={"k":1})
     )
 
-    # 5. Bucle interactivo de consulta
     print("🤖 Chatbot de Ventas (escribe 'salir' para terminar)")
     while True:
-        pregunta = input("\n¿Qué quieres saber de las ventas? ")
-        if pregunta.strip().lower() in ("salir", "exit", "quit"):
+        pregunta = input("> ¿Qué quieres saber de las ventas? ").strip()
+        if pregunta.lower() in ("salir","exit","quit"):
             print("👋 ¡Hasta luego!")
             break
-        respuesta = qa.run(pregunta)
-        print(f"💡 {respuesta}")
+
+        # 1) Local
+        resp = respuesta_local(pregunta, ventas)
+        if resp:
+            print("💡", resp)
+            continue
+
+        # 2) LLM con 0 retries
+        try:
+            res = qa.invoke({"query": pregunta})
+            print("💡", res["result"])
+        except RateLimitError:
+            print("⚠️ No se puede consultar a OpenAI, se acabó la cuota.")
 
 if __name__ == "__main__":
-    #exportar clave antes de ejecutar:
-    if not os.getenv("OPENAI_API_KEY"):
-        print("❗️ Definir la variable OPENAI_API_KEY antes de ejecutar.")
-    else:
-        main()
+    main()
+
